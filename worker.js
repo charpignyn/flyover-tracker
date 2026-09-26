@@ -1,24 +1,24 @@
 importScripts('https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js');
 
-const R_EARTH = 6371000; // rayon terrestre moyen, en mètres
+const R_EARTH = 6371000; // Mean Earth radius in meters.
 
 /**
- * Convertit des degrés en radians.
- * @param {number} d - Angle en degrés.
- * @returns {number} Angle en radians.
+ * Convert degrees to radians.
+ * @param {number} d - Angle in degrees.
+ * @returns {number} Angle in radians.
  */
 function toRad(d) { return (d * Math.PI) / 180; }
 
 /**
- * Calcule le décalage local (dx, dy) en mètres entre un point (lat, lon) et la position
- * "domicile", par approximation équirectangulaire (projection plane locale).
- * Valable uniquement pour de petites distances (jusqu'à quelques dizaines de km), ce qui est
- * largement suffisant ici puisqu'on ne s'intéresse qu'aux passages à moins de 25 km du domicile.
- * @param {number} lat - Latitude du point à convertir (degrés).
- * @param {number} lon - Longitude du point à convertir (degrés).
- * @param {number} homeLat - Latitude du point de référence "domicile" (degrés).
- * @param {number} homeLon - Longitude du point de référence "domicile" (degrés).
- * @returns {{dx: number, dy: number}} Décalage est-ouest (dx) et nord-sud (dy) en mètres.
+ * Compute local offset (dx, dy) in meters between a point (lat, lon) and the home position,
+ * using an equirectangular approximation (local plane projection).
+ * Valid only for small distances (up to tens of kilometers), which is more than sufficient here
+ * since we only care about passes within ~25 km of home.
+ * @param {number} lat - Latitude of the point to convert (degrees).
+ * @param {number} lon - Longitude of the point to convert (degrees).
+ * @param {number} homeLat - Latitude of the home reference point (degrees).
+ * @param {number} homeLon - Longitude of the home reference point (degrees).
+ * @returns {{dx: number, dy: number}} East-west (dx) and north-south (dy) offset in meters.
  */
 function localDelta(lat, lon, homeLat, homeLon) {
   const dx = toRad(lon - homeLon) * R_EARTH * Math.cos(toRad(homeLat));
@@ -27,17 +27,17 @@ function localDelta(lat, lon, homeLat, homeLon) {
 }
 
 /**
- * Propage un satellite (SGP4) à un instant donné et calcule sa distance au sol par rapport
- * au point "domicile". C'est la fonction de base appelée à chaque échantillon temporel,
- * aussi bien pendant le balayage grossier que pendant le raffinement fin.
- * @param {Object} satrec - Enregistrement satellite issu de satellite.twoline2satrec().
- * @param {Date} date - Instant auquel évaluer la position du satellite.
- * @param {number} homeLat - Latitude du point de référence (degrés).
- * @param {number} homeLon - Longitude du point de référence (degrés).
+ * Propagate a satellite (SGP4) at a given time and compute its ground distance from the
+ * home position. This is the core function called at each time sample, both during the
+ * coarse sweep and during fine refinement.
+ * @param {Object} satrec - Satellite record from satellite.twoline2satrec().
+ * @param {Date} date - Time at which to evaluate the satellite's position.
+ * @param {number} homeLat - Latitude of the home reference point (degrees).
+ * @param {number} homeLon - Longitude of the home reference point (degrees).
  * @returns {{d: number, dx: number, dy: number, alt: number, lat: number, lon: number}}
- *   Distance au sol en mètres (d), décalages est-ouest/nord-sud (dx, dy), altitude (alt, km),
- *   et position géodésique du point nadir (lat, lon en degrés). Si la propagation échoue
- *   (satellite décayé, erreur numérique...), une distance infinie est renvoyée.
+ *   Ground distance in meters (d), east-west/north-south offsets (dx, dy), altitude (alt, km),
+ *   and geodetic position of the nadir point (lat, lon in degrees). If propagation fails
+ *   (decayed satellite, numerical error, etc.), an infinite distance is returned.
  */
 function distanceAt(satrec, date, homeLat, homeLon) {
   const pv = satellite.propagate(satrec, date);
@@ -53,19 +53,19 @@ function distanceAt(satrec, date, homeLat, homeLon) {
 }
 
 /**
- * Affine l'instant de passage au plus près (minimum de distance) par recherche ternaire,
- * à l'intérieur d'un intervalle où un minimum local a déjà été repéré par l'échantillonnage
- * grossier. La fonction distance(t) est supposée unimodale sur ce petit intervalle
- * (un seul minimum, décroissante puis croissante), hypothèse raisonnable puisque l'intervalle
- * ne couvre que 2 pas d'échantillonnage grossier autour du minimum détecté.
- * @param {Object} satrec - Enregistrement satellite issu de satellite.twoline2satrec().
- * @param {number} loMs - Borne basse de l'intervalle de recherche (timestamp ms).
- * @param {number} hiMs - Borne haute de l'intervalle de recherche (timestamp ms).
- * @param {number} homeLat - Latitude du point de référence (degrés).
- * @param {number} homeLon - Longitude du point de référence (degrés).
- * @param {number} iterations - Nombre d'itérations de la recherche ternaire (précision du résultat).
+ * Refine the exact moment of closest approach (distance minimum) using a ternary search,
+ * within an interval where a local minimum was already detected by the coarse sweep.
+ * The distance(t) function is assumed to be unimodal over this small interval
+ * (single minimum, monotonically decreasing then increasing), a reasonable assumption since
+ * the interval spans only 2 coarse steps around the detected minimum.
+ * @param {Object} satrec - Satellite record from satellite.twoline2satrec().
+ * @param {number} loMs - Lower bound of the search interval (timestamp ms).
+ * @param {number} hiMs - Upper bound of the search interval (timestamp ms).
+ * @param {number} homeLat - Latitude of the home reference point (degrees).
+ * @param {number} homeLon - Longitude of the home reference point (degrees).
+ * @param {number} iterations - Number of ternary search iterations (precision of result).
  * @returns {{t: number, d: number, dx: number, dy: number, alt: number, lat: number, lon: number}}
- *   Instant du minimum trouvé (t) et l'état complet de distanceAt() à cet instant.
+ *   Time of the minimum found (t) and the complete state of distanceAt() at that instant.
  */
 function refineMin(satrec, loMs, hiMs, homeLat, homeLon, iterations) {
   let lo = loMs;
@@ -84,15 +84,15 @@ function refineMin(satrec, loMs, hiMs, homeLat, homeLon, iterations) {
 
 /**
  * Point d'entrée du worker : reçoit le catalogue de TLE et les paramètres de recherche,
- * puis calcule pour chaque satellite s'il traverse le carré 500x500m autour du domicile
- * au cours de la fenêtre temporelle donnée (typiquement la journée en cours).
+ * puis calcule pour chaque satellite s'il traverse une (ou les deux) boîtes concentriques
+ * autour du domicile au cours de la fenêtre temporelle donnée (typiquement la journée en cours).
  *
  * Algorithme en deux temps par satellite :
  *  1. Balayage grossier : distance(t) échantillonnée par pas de `coarseStepMs` sur toute la
  *     fenêtre, pour repérer les minima locaux sous le seuil `candidateThresholdM`.
  *  2. Raffinement fin : recherche ternaire (refineMin) autour de chaque minimum repéré, pour
  *     obtenir l'instant précis du passage au plus près et vérifier s'il entre réellement
- *     dans le carré (test sur dx/dy par rapport à `boxHalfWidthM`).
+ *     dans l'une des deux boîtes (test sur dx/dy par rapport à innerBoxHalfWidthM et outerBoxHalfWidthM).
  *
  * Un pré-filtre sur l'inclinaison orbitale élimine d'emblée les satellites qui ne peuvent
  * physiquement pas atteindre la latitude du domicile, avant tout calcul de propagation.
@@ -110,8 +110,8 @@ function refineMin(satrec, loMs, hiMs, homeLat, homeLon, iterations) {
  *   @param {number} e.data.coarseStepMs - Pas d'échantillonnage du balayage grossier (ms).
  *   @param {number} e.data.candidateThresholdM - Distance (m) sous laquelle un minimum local
  *     du balayage grossier déclenche un raffinement fin.
- *   @param {number} e.data.boxHalfWidthM - Demi-largeur du carré à détecter (m) ; 250 pour un
- *     carré de 500m de côté.
+ *   @param {number} e.data.innerBoxHalfWidthM - Demi-largeur de la boîte interne (m).
+ *   @param {number} e.data.outerBoxHalfWidthM - Demi-largeur de la boîte externe (m).
  *   @param {Object<string,string>} e.data.countryMap - Table numéro NORAD -> code pays (SATCAT).
  */
 self.onmessage = function (e) {
@@ -123,7 +123,8 @@ self.onmessage = function (e) {
     windowEndMs,
     coarseStepMs,
     candidateThresholdM,
-    boxHalfWidthM,
+    innerBoxHalfWidthM,
+    outerBoxHalfWidthM,
     countryMap,
   } = e.data;
 
@@ -141,8 +142,8 @@ self.onmessage = function (e) {
       continue;
     }
 
-    // Pré-filtre : un satellite ne peut survoler une latitude supérieure à son inclinaison
-    // (avec une petite marge pour les imprécisions numériques)
+    // Pre-filter: a satellite cannot reach a latitude higher than its orbital inclination
+    // (with a small margin for numerical imprecision).
     const incDeg = (satrec.inclo * 180) / Math.PI;
     if (incDeg < Math.abs(homeLat) - 2) {
       skippedByInclination++;
@@ -167,7 +168,10 @@ self.onmessage = function (e) {
         const hiMs = windowStartMs + (i + 1) * coarseStepMs;
         const refined = refineMin(satrec, loMs, hiMs, homeLat, homeLon, 28);
 
-        if (Math.abs(refined.dx) <= boxHalfWidthM && Math.abs(refined.dy) <= boxHalfWidthM) {
+        const inInner = Math.abs(refined.dx) <= innerBoxHalfWidthM && Math.abs(refined.dy) <= innerBoxHalfWidthM;
+        const inOuter = Math.abs(refined.dx) <= outerBoxHalfWidthM && Math.abs(refined.dy) <= outerBoxHalfWidthM;
+
+        if (inInner || inOuter) {
           results.push({
             catnr: sat.catnr,
             name: sat.name,
@@ -181,6 +185,7 @@ self.onmessage = function (e) {
             lat: refined.lat,
             lon: refined.lon,
             country: countryMap[sat.catnr] || null,
+            boxType: inInner ? 'inner' : 'outer',
           });
         }
       }
