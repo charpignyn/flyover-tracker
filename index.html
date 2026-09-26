@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Satellite Passes — Above Your Home</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js"></script>
+<style>
+  :root{
+    --bg: #0a0d12;
+    --panel: #10141c;
+    --panel-2: #151b25;
+    --line: #232b38;
+    --text: #dbe2ea;
+    --text-dim: #7c8a9c;
+    --past: #6b7686;
+    --future: #3ddc97;
+    --iss: #f2b705;
+    --live-ring: #ffffff;
+    --danger: #e0566a;
+    --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); }
+  #app { display: grid; grid-template-columns: 1fr 380px; grid-template-rows: auto 1fr; height: 100vh; }
+  header {
+    grid-column: 1 / 3;
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 14px; font-weight: 600; letter-spacing: 0.2px; margin: 0; color: var(--text); white-space: nowrap; }
+  header form { display: flex; gap: 8px; flex: 1; min-width: 240px; }
+  header input[type=text] {
+    flex: 1; background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+    padding: 7px 10px; border-radius: 5px; font-size: 13px; font-family: var(--sans);
+  }
+  header select, header button {
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+    padding: 7px 10px; border-radius: 5px; font-size: 13px; cursor: pointer; font-family: var(--sans);
+  }
+  header button.primary { background: var(--future); color: #06251b; border-color: var(--future); font-weight: 600; }
+  header button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #map { width: 100%; height: 100%; background: #060809; }
+  #sidebar { background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; overflow: hidden; }
+  #status {
+    padding: 10px 14px; font-size: 12px; color: var(--text-dim); border-bottom: 1px solid var(--line);
+    font-family: var(--mono);
+  }
+  #status .bar { height: 3px; background: var(--panel-2); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  #status .bar > div { height: 100%; background: var(--future); width: 0%; transition: width 0.2s; }
+  #legend { display: flex; gap: 12px; padding: 8px 14px; font-size: 11px; color: var(--text-dim); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  #legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  #list { flex: 1; overflow-y: auto; }
+  .item {
+    padding: 10px 14px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background 0.15s;
+  }
+  .item:hover { background: var(--panel-2); }
+  .item .row1 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .item .name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .item .name.iss { color: var(--iss); }
+  .item .time { font-family: var(--mono); font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+  .item .meta { margin-top: 3px; font-size: 11.5px; color: var(--text-dim); display: flex; gap: 8px; flex-wrap: wrap; }
+  .badge { font-size: 10px; padding: 1px 6px; border-radius: 10px; font-weight: 600; letter-spacing: 0.2px; }
+  .badge.past { background: rgba(107,118,134,0.18); color: var(--past); }
+  .badge.future { background: rgba(61,220,151,0.15); color: var(--future); }
+  .badge.live { background: rgba(255,255,255,0.15); color: #fff; animation: pulse 1.4s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+  #empty { padding: 30px 18px; color: var(--text-dim); font-size: 13px; line-height: 1.5; }
+  .sat-dot-live { filter: drop-shadow(0 0 6px currentColor); }
+  .leaflet-popup-content-wrapper { background: var(--panel-2); color: var(--text); }
+  .leaflet-popup-tip { background: var(--panel-2); }
+  .popup-title { font-weight: 600; margin-bottom: 4px; }
+  .popup-line { font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🛰 SAT&nbsp;PASSES</h1>
+    <form id="geoForm">
+      <input type="text" id="addressInput" placeholder="Address (e.g. 350 Fifth Ave, New York)" />
+      <button type="submit" class="primary">Locate</button>
+    </form>
+    <select id="catalogSelect" title="Catalog scope">
+      <option value="full" selected>Full catalog (+ debris)</option>
+      <option value="active">Active only (faster)</option>
+    </select>
+    <select id="resSelect" title="Search resolution">
+      <option value="45000" selected>Standard resolution</option>
+      <option value="90000">Fast (less precise)</option>
+      <option value="20000">Precise (slower)</option>
+    </select>
+    <button id="recomputeBtn" disabled>Recompute today</button>
+  </header>
+  <div id="map"></div>
+  <div id="sidebar">
+    <div id="status">Enter an address to get started.<div class="bar"><div id="progressBar"></div></div></div>
+    <div id="legend">
+      <span><i class="dot" style="background:var(--past)"></i>Already passed</span>
+      <span><i class="dot" style="background:var(--future)"></i>Upcoming</span>
+      <span><i class="dot" style="background:var(--iss)"></i>ISS</span>
+      <span><i class="dot" style="background:#fff"></i>Live</span>
+    </div>
+    <div id="list"><div id="empty">No passes computed yet.</div></div>
+  </div>
+</div>
+
+<script>
+const BOX_HALF_WIDTH_M = 250; // carré de 500m de côté
+const CANDIDATE_THRESHOLD_M = 25000; // seuil grossier avant raffinement
+const LIVE_WINDOW_MS = 4 * 60 * 1000; // fenêtre d'animation "en direct" autour de maintenant
+
+const COUNTRY_NAMES = {
+  US: 'United States', RU: 'Russia', CIS: 'Russia / ex-USSR', PRC: 'China', CN: 'China',
+  FR: 'France', UK: 'United Kingdom', GB: 'United Kingdom', IN: 'India', JPN: 'Japan', JP: 'Japan',
+  ESA: 'Europe (ESA)', EUTE: 'Europe (Eutelsat)', GER: 'Germany', ISS: 'International (ISS)',
+  ISRA: 'Israel', PRK: 'North Korea', ROK: 'South Korea', CA: 'Canada', IT: 'Italy',
+  UAE: 'United Arab Emirates', LUXE: 'Luxembourg', NETH: 'Netherlands', SPN: 'Spain',
+};
+
+const GROUPS_FULL = ['active', 'tle-new', 'stations', 'cosmos-1408-debris', 'iridium-33-debris', 'cosmos-2251-debris', 'fengyun-1c-debris', 'russian-asat-debris'];
+const GROUPS_ACTIVE = ['active', 'stations'];
+
+function classify(name, group) {
+  const n = name.toUpperCase();
+  if (n.includes('ISS (ZARYA)') || n.includes('ISS(ZARYA)')) return 'Crewed space station';
+  if (group && group.includes('debris')) return 'Debris';
+  if (n.includes(' DEB') || n.endsWith('DEB')) return 'Debris';
+  if (n.includes('R/B')) return 'Rocket body';
+  if (n.startsWith('STARLINK') || n.startsWith('ONEWEB') || n.startsWith('IRIDIUM') || n.startsWith('GLOBALSTAR') || n.startsWith('ORBCOMM')) return 'Communications';
+  if (n.startsWith('NOAA') || n.startsWith('GOES') || n.startsWith('METEOSAT') || n.startsWith('METOP')) return 'Weather';
+  if (n.startsWith('GPS') || n.startsWith('GLONASS') || n.startsWith('GALILEO') || n.startsWith('BEIDOU')) return 'Navigation';
+  if (n.startsWith('COSMOS') || n.startsWith('METEOR')) return 'Military / government (likely)';
+  return 'Unknown function';
+}
+
+let map, rectLayer, homeMarker;
+let liveMarkers = new Map(); // catnr -> L.CircleMarker
+let staticMarkers = new Map();
+let allResults = [];
+let homeLat = null, homeLon = null;
+let tickTimer = null;
+let worker = null;
+
+function initMap() {
+  map = L.map('map', { zoomControl: true, attributionControl: true }).setView([44.84, -0.58], 13);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics',
+    maxZoom: 19,
+  }).addTo(map);
+}
+
+function setStatus(msg, progress) {
+  const el = document.getElementById('status');
+  const bar = document.getElementById('progressBar');
+  el.childNodes[0].nodeValue = msg;
+  if (progress === undefined) { bar.style.width = '0%'; }
+  else { bar.style.width = Math.round(progress * 100) + '%'; }
+}
+
+async function geocode(address) {
+  const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(address);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Geocoding failed (HTTP ' + res.status + ')');
+  const data = await res.json();
+  if (!data.length) throw new Error('Address not found');
+  return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), label: data[0].display_name };
+}
+
+function drawHome() {
+  if (rectLayer) map.removeLayer(rectLayer);
+  if (homeMarker) map.removeLayer(homeMarker);
+
+  const latOffset = BOX_HALF_WIDTH_M / 110540;
+  const lonOffset = BOX_HALF_WIDTH_M / (111320 * Math.cos(homeLat * Math.PI / 180));
+  const bounds = [[homeLat - latOffset, homeLon - lonOffset], [homeLat + latOffset, homeLon + lonOffset]];
+
+  rectLayer = L.rectangle(bounds, { color: '#3ddc97', weight: 2, fillOpacity: 0.05, dashArray: '4 4' }).addTo(map);
+  homeMarker = L.circleMarker([homeLat, homeLon], { radius: 4, color: '#fff', fillColor: '#fff', fillOpacity: 1 }).addTo(map);
+
+  map.fitBounds(bounds, { maxZoom: 18, padding: [80, 80] });
+}
+
+// Parse le format TLE brut (blocs de 3 lignes) renvoyé par gp.php&FORMAT=tle
+function parseTleBlock(text, group) {
+  const lines = text.split('\n').map(l => l.replace(/\r$/, '')).filter(l => l.trim().length > 0);
+  const sats = [];
+  for (let i = 0; i + 2 < lines.length; i += 3) {
+    const name = lines[i].trim();
+    const line1 = lines[i + 1];
+    const line2 = lines[i + 2];
+    if (!line1.startsWith('1 ') || !line2.startsWith('2 ')) continue;
+    const catnr = line1.substring(2, 7).trim();
+    sats.push({ name, line1, line2, catnr, func: classify(name, group) });
+  }
+  return sats;
+}
+
+async function fetchGroup(group) {
+  const url = 'https://celestrak.org/NORAD/elements/gp.php?GROUP=' + group + '&FORMAT=tle';
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Group ' + group + ' unavailable (HTTP ' + res.status + ')');
+  const text = await res.text();
+  return parseTleBlock(text, group);
+}
+
+// SATCAT legacy (texte à largeur fixe, champs séparés par des espaces multiples) -> pays par numéro NORAD
+async function fetchCountryMap() {
+  try {
+    const res = await fetch('https://celestrak.org/pub/satcat.txt');
+    if (!res.ok) return {};
+    const text = await res.text();
+    const map = {};
+    for (const line of text.split('\n')) {
+      const parts = line.trim().split(/\s{2,}/);
+      if (parts.length < 5) continue;
+      const catnr = parts[1];
+      const country = parts[4];
+      if (/^\d+$/.test(catnr) && country) map[catnr] = country;
+    }
+    return map;
+  } catch (e) {
+    console.warn('SATCAT unavailable, nationalities unknown', e);
+    return {};
+  }
+}
+
+async function fetchAllTles(mode) {
+  const groups = mode === 'active' ? GROUPS_ACTIVE : GROUPS_FULL;
+  const seen = new Set();
+  const combined = [];
+  for (const g of groups) {
+    setStatus('Downloading orbital elements (' + g + ')…');
+    try {
+      const sats = await fetchGroup(g);
+      for (const s of sats) {
+        if (seen.has(s.catnr)) continue;
+        seen.add(s.catnr);
+        combined.push(s);
+      }
+    } catch (e) {
+      console.warn('Group skipped:', g, e.message);
+    }
+  }
+  return combined;
+}
+
+function countryLabel(code) {
+  if (!code) return 'Unknown';
+  return COUNTRY_NAMES[code] || code;
+}
+
+function fmtTime(ms) {
+  const d = new Date(ms);
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function isISS(r) { return r.catnr === '25544'; }
+
+function statusFor(r, now) {
+  if (Math.abs(r.t - now) <= LIVE_WINDOW_MS) return 'live';
+  return r.t < now ? 'past' : 'future';
+}
+
+function colorFor(r, st) {
+  if (isISS(r)) return getComputedStyle(document.documentElement).getPropertyValue('--iss').trim();
+  if (st === 'live') return '#ffffff';
+  return st === 'past'
+    ? getComputedStyle(document.documentElement).getPropertyValue('--past').trim()
+    : getComputedStyle(document.documentElement).getPropertyValue('--future').trim();
+}
+
+function renderList() {
+  const list = document.getElementById('list');
+  const now = Date.now();
+  if (!allResults.length) {
+    list.innerHTML = '<div id="empty">No passes detected through the square today with these settings. That\'s normal — the zone is small (500m). Try the full catalog, or check back later in the day.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  for (const r of allResults) {
+    const st = statusFor(r, now);
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.innerHTML =
+      '<div class="row1">' +
+        '<span class="name' + (isISS(r) ? ' iss' : '') + '">' + escapeHtml(r.name) + '</span>' +
+        '<span class="time">' + fmtTime(r.t) + '</span>' +
+      '</div>' +
+      '<div class="meta">' +
+        '<span class="badge ' + st + '">' + (st === 'live' ? 'LIVE' : st === 'past' ? 'Past' : 'Upcoming') + '</span>' +
+        '<span>' + countryLabel(r.country) + '</span>' +
+        '<span>' + r.func + '</span>' +
+        '<span>alt. ' + Math.round(r.alt) + ' km</span>' +
+      '</div>';
+    div.addEventListener('click', () => {
+      map.flyTo([r.lat, r.lon], 18, { duration: 0.6 });
+      L.popup().setLatLng([r.lat, r.lon])
+        .setContent('<div class="popup-title">' + escapeHtml(r.name) + '</div>' +
+          '<div class="popup-line">' + fmtTime(r.t) + ' — ' + countryLabel(r.country) + '</div>' +
+          '<div class="popup-line">' + r.func + '</div>')
+        .openOn(map);
+    });
+    list.appendChild(div);
+  }
+}
+
+function escapeHtml(s) { return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function refreshMarkers() {
+  const now = Date.now();
+  for (const r of allResults) {
+    const st = statusFor(r, now);
+    const color = colorFor(r, st);
+    let m = staticMarkers.get(r.catnr + '_' + r.t);
+    if (!m) {
+      m = L.circleMarker([r.lat, r.lon], {
+        radius: st === 'live' ? 7 : 5,
+        color, fillColor: color, fillOpacity: 0.9, weight: st === 'live' ? 2 : 1,
+        className: st === 'live' ? 'sat-dot-live' : '',
+      }).addTo(map);
+      m.bindTooltip(r.name, { direction: 'top', offset: [0, -6] });
+      staticMarkers.set(r.catnr + '_' + r.t, m);
+    } else {
+      m.setStyle({ color, fillColor: color, radius: st === 'live' ? 7 : 5, weight: st === 'live' ? 2 : 1 });
+    }
+  }
+}
+
+function startTicker() {
+  if (tickTimer) clearInterval(tickTimer);
+  tickTimer = setInterval(() => { renderList(); refreshMarkers(); }, 1000);
+}
+
+function runSearch(mode, coarseStepMs) {
+  return new Promise(async (resolve, reject) => {
+    setStatus('Preparing…', 0);
+    let tles;
+    try {
+      tles = await fetchAllTles(mode);
+    } catch (e) { return reject(e); }
+
+    setStatus('Fetching nationalities (SATCAT)…');
+    const countryMap = await fetchCountryMap();
+
+    setStatus('Computing passes (' + tles.length + ' objects)…', 0);
+
+    if (worker) worker.terminate();
+    worker = new Worker('worker.js');
+
+    const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(); endOfDay.setHours(23, 59, 59, 999);
+
+    worker.onmessage = (e) => {
+      const msg = e.data;
+      if (msg.type === 'progress') {
+        setStatus('Computing passes… (' + msg.processed + '/' + msg.total + ')', msg.processed / msg.total);
+      } else if (msg.type === 'done') {
+        resolve(msg.results);
+      }
+    };
+    worker.onerror = (err) => reject(err);
+
+    worker.postMessage({
+      tles, homeLat, homeLon,
+      windowStartMs: startOfDay.getTime(),
+      windowEndMs: endOfDay.getTime(),
+      coarseStepMs,
+      candidateThresholdM: CANDIDATE_THRESHOLD_M,
+      boxHalfWidthM: BOX_HALF_WIDTH_M,
+      countryMap,
+    });
+  });
+}
+
+async function launch() {
+  document.getElementById('recomputeBtn').disabled = true;
+  const mode = document.getElementById('catalogSelect').value;
+  const coarseStepMs = parseInt(document.getElementById('resSelect').value, 10);
+
+  // nettoyage des anciens marqueurs
+  for (const m of staticMarkers.values()) map.removeLayer(m);
+  staticMarkers.clear();
+  allResults = [];
+  renderList();
+
+  try {
+    const results = await runSearch(mode, coarseStepMs);
+    allResults = results;
+    setStatus(results.length + ' pass(es) found today. Updating live.');
+    renderList();
+    refreshMarkers();
+    startTicker();
+  } catch (e) {
+    console.error(e);
+    setStatus('Error: ' + e.message + ' — check your connection (CelesTrak/Nominatim must be reachable).');
+  } finally {
+    document.getElementById('recomputeBtn').disabled = false;
+  }
+}
+
+document.getElementById('geoForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const address = document.getElementById('addressInput').value.trim();
+  if (!address) return;
+  setStatus('Geocoding address…');
+  try {
+    const loc = await geocode(address);
+    homeLat = loc.lat; homeLon = loc.lon;
+    drawHome();
+    document.getElementById('recomputeBtn').disabled = false;
+    await launch();
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+  }
+});
+
+document.getElementById('recomputeBtn').addEventListener('click', () => {
+  if (homeLat !== null) launch();
+});
+
+initMap();
+</script>
+</body>
+</html>
