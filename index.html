@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Passages satellites — au-dessus de chez vous</title>
+<title>Satellite Passes — Above Your Home</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js"></script>
@@ -81,32 +81,32 @@
 <body>
 <div id="app">
   <header>
-    <h1>🛰 PASSAGES&nbsp;SAT</h1>
+    <h1>🛰 SAT&nbsp;PASSES</h1>
     <form id="geoForm">
-      <input type="text" id="addressInput" placeholder="Adresse (ex: 12 rue de la Paix, Bordeaux)" />
-      <button type="submit" class="primary">Localiser</button>
+      <input type="text" id="addressInput" placeholder="Address (e.g. 350 Fifth Ave, New York)" />
+      <button type="submit" class="primary">Locate</button>
     </form>
-    <select id="catalogSelect" title="Étendue du catalogue">
-      <option value="full" selected>Catalogue complet (+ débris)</option>
-      <option value="active">Actifs seulement (plus rapide)</option>
+    <select id="catalogSelect" title="Catalog scope">
+      <option value="full" selected>Full catalog (+ debris)</option>
+      <option value="active">Active only (faster)</option>
     </select>
-    <select id="resSelect" title="Résolution de recherche">
-      <option value="45000" selected>Résolution standard</option>
-      <option value="90000">Rapide (moins précis)</option>
-      <option value="20000">Précis (plus lent)</option>
+    <select id="resSelect" title="Search resolution">
+      <option value="45000" selected>Standard resolution</option>
+      <option value="90000">Fast (less precise)</option>
+      <option value="20000">Precise (slower)</option>
     </select>
-    <button id="recomputeBtn" disabled>Recalculer aujourd'hui</button>
+    <button id="recomputeBtn" disabled>Recompute today</button>
   </header>
   <div id="map"></div>
   <div id="sidebar">
-    <div id="status">Entrez une adresse pour commencer.<div class="bar"><div id="progressBar"></div></div></div>
+    <div id="status">Enter an address to get started.<div class="bar"><div id="progressBar"></div></div></div>
     <div id="legend">
-      <span><i class="dot" style="background:var(--past)"></i>Déjà passé</span>
-      <span><i class="dot" style="background:var(--future)"></i>À venir</span>
+      <span><i class="dot" style="background:var(--past)"></i>Already passed</span>
+      <span><i class="dot" style="background:var(--future)"></i>Upcoming</span>
       <span><i class="dot" style="background:var(--iss)"></i>ISS</span>
-      <span><i class="dot" style="background:#fff"></i>En direct</span>
+      <span><i class="dot" style="background:#fff"></i>Live</span>
     </div>
-    <div id="list"><div id="empty">Aucun passage calculé pour l'instant.</div></div>
+    <div id="list"><div id="empty">No passes computed yet.</div></div>
   </div>
 </div>
 
@@ -116,11 +116,11 @@ const CANDIDATE_THRESHOLD_M = 25000; // seuil grossier avant raffinement
 const LIVE_WINDOW_MS = 4 * 60 * 1000; // fenêtre d'animation "en direct" autour de maintenant
 
 const COUNTRY_NAMES = {
-  US: 'États-Unis', RU: 'Russie', CIS: 'Russie / ex-URSS', PRC: 'Chine', CN: 'Chine',
-  FR: 'France', UK: 'Royaume-Uni', GB: 'Royaume-Uni', IN: 'Inde', JPN: 'Japon', JP: 'Japon',
-  ESA: 'Europe (ESA)', EUTE: 'Europe (Eutelsat)', GER: 'Allemagne', ISS: 'International (ISS)',
-  ISRA: 'Israël', PRK: 'Corée du Nord', ROK: 'Corée du Sud', CA: 'Canada', IT: 'Italie',
-  UAE: 'Émirats arabes unis', LUXE: 'Luxembourg', NETH: 'Pays-Bas', SPN: 'Espagne',
+  US: 'United States', RU: 'Russia', CIS: 'Russia / ex-USSR', PRC: 'China', CN: 'China',
+  FR: 'France', UK: 'United Kingdom', GB: 'United Kingdom', IN: 'India', JPN: 'Japan', JP: 'Japan',
+  ESA: 'Europe (ESA)', EUTE: 'Europe (Eutelsat)', GER: 'Germany', ISS: 'International (ISS)',
+  ISRA: 'Israel', PRK: 'North Korea', ROK: 'South Korea', CA: 'Canada', IT: 'Italy',
+  UAE: 'United Arab Emirates', LUXE: 'Luxembourg', NETH: 'Netherlands', SPN: 'Spain',
 };
 
 const GROUPS_FULL = ['active', 'tle-new', 'stations', 'cosmos-1408-debris', 'iridium-33-debris', 'cosmos-2251-debris', 'fengyun-1c-debris', 'russian-asat-debris'];
@@ -128,15 +128,15 @@ const GROUPS_ACTIVE = ['active', 'stations'];
 
 function classify(name, group) {
   const n = name.toUpperCase();
-  if (n.includes('ISS (ZARYA)') || n.includes('ISS(ZARYA)')) return 'Station spatiale habitée';
-  if (group && group.includes('debris')) return 'Débris';
-  if (n.includes(' DEB') || n.endsWith('DEB')) return 'Débris';
-  if (n.includes('R/B')) return 'Étage de fusée';
-  if (n.startsWith('STARLINK') || n.startsWith('ONEWEB') || n.startsWith('IRIDIUM') || n.startsWith('GLOBALSTAR') || n.startsWith('ORBCOMM')) return 'Communication';
-  if (n.startsWith('NOAA') || n.startsWith('GOES') || n.startsWith('METEOSAT') || n.startsWith('METOP')) return 'Météorologie';
+  if (n.includes('ISS (ZARYA)') || n.includes('ISS(ZARYA)')) return 'Crewed space station';
+  if (group && group.includes('debris')) return 'Debris';
+  if (n.includes(' DEB') || n.endsWith('DEB')) return 'Debris';
+  if (n.includes('R/B')) return 'Rocket body';
+  if (n.startsWith('STARLINK') || n.startsWith('ONEWEB') || n.startsWith('IRIDIUM') || n.startsWith('GLOBALSTAR') || n.startsWith('ORBCOMM')) return 'Communications';
+  if (n.startsWith('NOAA') || n.startsWith('GOES') || n.startsWith('METEOSAT') || n.startsWith('METOP')) return 'Weather';
   if (n.startsWith('GPS') || n.startsWith('GLONASS') || n.startsWith('GALILEO') || n.startsWith('BEIDOU')) return 'Navigation';
-  if (n.startsWith('COSMOS') || n.startsWith('METEOR')) return 'Militaire / gouvernemental (probable)';
-  return 'Fonction inconnue';
+  if (n.startsWith('COSMOS') || n.startsWith('METEOR')) return 'Military / government (likely)';
+  return 'Unknown function';
 }
 
 let map, rectLayer, homeMarker;
@@ -166,9 +166,9 @@ function setStatus(msg, progress) {
 async function geocode(address) {
   const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(address);
   const res = await fetch(url);
-  if (!res.ok) throw new Error('Géocodage échoué (HTTP ' + res.status + ')');
+  if (!res.ok) throw new Error('Geocoding failed (HTTP ' + res.status + ')');
   const data = await res.json();
-  if (!data.length) throw new Error('Adresse introuvable');
+  if (!data.length) throw new Error('Address not found');
   return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), label: data[0].display_name };
 }
 
@@ -204,7 +204,7 @@ function parseTleBlock(text, group) {
 async function fetchGroup(group) {
   const url = 'https://celestrak.org/NORAD/elements/gp.php?GROUP=' + group + '&FORMAT=tle';
   const res = await fetch(url);
-  if (!res.ok) throw new Error('Groupe ' + group + ' indisponible (HTTP ' + res.status + ')');
+  if (!res.ok) throw new Error('Group ' + group + ' unavailable (HTTP ' + res.status + ')');
   const text = await res.text();
   return parseTleBlock(text, group);
 }
@@ -225,7 +225,7 @@ async function fetchCountryMap() {
     }
     return map;
   } catch (e) {
-    console.warn('SATCAT indisponible, nationalités inconnues', e);
+    console.warn('SATCAT unavailable, nationalities unknown', e);
     return {};
   }
 }
@@ -235,7 +235,7 @@ async function fetchAllTles(mode) {
   const seen = new Set();
   const combined = [];
   for (const g of groups) {
-    setStatus('Téléchargement des éléments orbitaux (' + g + ')…');
+    setStatus('Downloading orbital elements (' + g + ')…');
     try {
       const sats = await fetchGroup(g);
       for (const s of sats) {
@@ -244,20 +244,20 @@ async function fetchAllTles(mode) {
         combined.push(s);
       }
     } catch (e) {
-      console.warn('Groupe ignoré:', g, e.message);
+      console.warn('Group skipped:', g, e.message);
     }
   }
   return combined;
 }
 
 function countryLabel(code) {
-  if (!code) return 'Inconnue';
+  if (!code) return 'Unknown';
   return COUNTRY_NAMES[code] || code;
 }
 
 function fmtTime(ms) {
   const d = new Date(ms);
-  return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 function isISS(r) { return r.catnr === '25544'; }
@@ -279,7 +279,7 @@ function renderList() {
   const list = document.getElementById('list');
   const now = Date.now();
   if (!allResults.length) {
-    list.innerHTML = '<div id="empty">Aucun passage détecté dans le carré aujourd\'hui avec ces réglages. C\'est normal : la zone est petite (500m). Réessayez avec le catalogue complet, ou revenez plus tard dans la journée.</div>';
+    list.innerHTML = '<div id="empty">No passes detected through the square today with these settings. That\'s normal — the zone is small (500m). Try the full catalog, or check back later in the day.</div>';
     return;
   }
   list.innerHTML = '';
@@ -293,7 +293,7 @@ function renderList() {
         '<span class="time">' + fmtTime(r.t) + '</span>' +
       '</div>' +
       '<div class="meta">' +
-        '<span class="badge ' + st + '">' + (st === 'live' ? 'EN DIRECT' : st === 'past' ? 'Passé' : 'À venir') + '</span>' +
+        '<span class="badge ' + st + '">' + (st === 'live' ? 'LIVE' : st === 'past' ? 'Past' : 'Upcoming') + '</span>' +
         '<span>' + countryLabel(r.country) + '</span>' +
         '<span>' + r.func + '</span>' +
         '<span>alt. ' + Math.round(r.alt) + ' km</span>' +
@@ -339,16 +339,16 @@ function startTicker() {
 
 function runSearch(mode, coarseStepMs) {
   return new Promise(async (resolve, reject) => {
-    setStatus('Préparation…', 0);
+    setStatus('Preparing…', 0);
     let tles;
     try {
       tles = await fetchAllTles(mode);
     } catch (e) { return reject(e); }
 
-    setStatus('Récupération des nationalités (SATCAT)…');
+    setStatus('Fetching nationalities (SATCAT)…');
     const countryMap = await fetchCountryMap();
 
-    setStatus('Calcul des passages (' + tles.length + ' objets)…', 0);
+    setStatus('Computing passes (' + tles.length + ' objects)…', 0);
 
     if (worker) worker.terminate();
     worker = new Worker('worker.js');
@@ -359,7 +359,7 @@ function runSearch(mode, coarseStepMs) {
     worker.onmessage = (e) => {
       const msg = e.data;
       if (msg.type === 'progress') {
-        setStatus('Calcul des passages… (' + msg.processed + '/' + msg.total + ')', msg.processed / msg.total);
+        setStatus('Computing passes… (' + msg.processed + '/' + msg.total + ')', msg.processed / msg.total);
       } else if (msg.type === 'done') {
         resolve(msg.results);
       }
@@ -392,13 +392,13 @@ async function launch() {
   try {
     const results = await runSearch(mode, coarseStepMs);
     allResults = results;
-    setStatus(results.length + ' passage(s) trouvé(s) aujourd\'hui. Mis à jour en direct.');
+    setStatus(results.length + ' pass(es) found today. Updating live.');
     renderList();
     refreshMarkers();
     startTicker();
   } catch (e) {
     console.error(e);
-    setStatus('Erreur : ' + e.message + ' — vérifiez la connexion (CelesTrak/Nominatim doivent être accessibles).');
+    setStatus('Error: ' + e.message + ' — check your connection (CelesTrak/Nominatim must be reachable).');
   } finally {
     document.getElementById('recomputeBtn').disabled = false;
   }
@@ -408,7 +408,7 @@ document.getElementById('geoForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const address = document.getElementById('addressInput').value.trim();
   if (!address) return;
-  setStatus('Géocodage de l\'adresse…');
+  setStatus('Geocoding address…');
   try {
     const loc = await geocode(address);
     homeLat = loc.lat; homeLon = loc.lon;
@@ -416,7 +416,7 @@ document.getElementById('geoForm').addEventListener('submit', async (e) => {
     document.getElementById('recomputeBtn').disabled = false;
     await launch();
   } catch (e) {
-    setStatus('Erreur : ' + e.message);
+    setStatus('Error: ' + e.message);
   }
 });
 
