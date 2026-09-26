@@ -5,8 +5,9 @@
 The files must be served through a small local server (the `fetch` requests to CelesTrak/Nominatim are more reliable this way than when opening the file directly with `file://`):
 
 ```bash
-cd project-directory
-python3 -m http.server 8000
+git clone https://github.com/charpignyn/flyover-tracker.git flyover-tracker 
+cd flyover-tracker
+python -m http.server 8000
 ```
 
 Then open http://localhost:8000/index.html in your browser.
