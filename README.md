@@ -19,11 +19,12 @@ No API key needed (CelesTrak, Nominatim, and the Esri tiles are all free to use)
 2. **Fetching orbital elements (TLE)**: several CelesTrak groups are combined (`active`, `stations`, `tle-new`, + the main debris clouds) to approximate a "full catalog". CelesTrak doesn't expose a single, anonymous feed of the entire SATCAT (~30,000+ objects, including the very latest) — combining groups this way is a reasonable approximation without a Space-Track account.
 3. **Nationality**: cross-referenced from CelesTrak's plain-text SATCAT (`pub/satcat.txt`) by NORAD number. The field isn't always present for the most recently launched objects.
 4. **Function**: a heuristic classification by name/group (communications, weather, navigation, debris, rocket body...) — CelesTrak doesn't provide a structured "function" field for the whole catalog.
-5. **Pass detection**: in a Web Worker, for every satellite whose inclination allows it to reach your latitude, the distance to the center of the square is sampled across the whole day (SGP4 via `satellite.js`), then refined with a ternary search around each local minimum to check whether the pass truly enters the 500m square.
-6. **Rare, and that's expected**: the square is small. Some days there may be only a handful of passes, or none at all in "Active only" mode. "Full catalog" mode finds more (debris included).
+5. **Pass detection**: in a Web Worker, for every satellite whose inclination allows it to reach your latitude, the distance to the center of the detection box is sampled across the whole day (SGP4 via `satellite.js`), then refined with a ternary search around each local minimum to check whether the pass truly enters the box.
+6. **Rare, and that's expected**: the box size is customizable. Some days there may be only a handful of passes, or none at all in "Active only" mode. "Full catalog" mode finds more (debris included).
 
 ## Settings available in the interface
 
+- **Box size (km)**: customize the detection area radius in kilometers (default 20 km).
 - **Catalog scope**: Active only (faster) vs Full catalog + debris (richer, slower on the first computation).
 - **Search resolution**: controls the coarse sampling step before refinement (Fast/Standard/Precise) — a speed vs. risk-of-missing-a-brief-pass trade-off.
 

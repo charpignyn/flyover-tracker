@@ -83,36 +83,35 @@ function refineMin(satrec, loMs, hiMs, homeLat, homeLon, iterations) {
 }
 
 /**
- * Point d'entrée du worker : reçoit le catalogue de TLE et les paramètres de recherche,
- * puis calcule pour chaque satellite s'il traverse une (ou les deux) boîtes concentriques
- * autour du domicile au cours de la fenêtre temporelle donnée (typiquement la journée en cours).
+ * Entry point of the worker: receives the TLE catalog and search parameters,
+ * then computes for each satellite whether it passes through the detection box
+ * centered on the home location during the given time window (typically the current day).
  *
- * Algorithme en deux temps par satellite :
- *  1. Balayage grossier : distance(t) échantillonnée par pas de `coarseStepMs` sur toute la
- *     fenêtre, pour repérer les minima locaux sous le seuil `candidateThresholdM`.
- *  2. Raffinement fin : recherche ternaire (refineMin) autour de chaque minimum repéré, pour
- *     obtenir l'instant précis du passage au plus près et vérifier s'il entre réellement
- *     dans l'une des deux boîtes (test sur dx/dy par rapport à innerBoxHalfWidthM et outerBoxHalfWidthM).
+ * Two-phase algorithm per satellite:
+ *  1. Coarse sweep: distance(t) sampled every `coarseStepMs` across the entire
+ *     window to identify local minima below the threshold `candidateThresholdM`.
+ *  2. Fine refinement: ternary search (refineMin) around each detected minimum
+ *     to obtain the precise moment of closest approach and verify whether the
+ *     pass actually enters the detection box (test dx/dy against boxHalfWidthM).
  *
- * Un pré-filtre sur l'inclinaison orbitale élimine d'emblée les satellites qui ne peuvent
- * physiquement pas atteindre la latitude du domicile, avant tout calcul de propagation.
+ * An orbital inclination pre-filter eliminates upfront satellites that cannot
+ * physically reach the target latitude, before any propagation computation.
  *
- * Progression envoyée régulièrement via postMessage({type:'progress', ...}), résultat final
- * envoyé via postMessage({type:'done', results, skippedByInclination}).
+ * Progress updates are sent regularly via postMessage({type:'progress', ...}),
+ * final results are sent via postMessage({type:'done', results, skippedByInclination}).
  *
- * @param {MessageEvent} e - Message reçu, avec e.data contenant :
+ * @param {MessageEvent} e - Message received, with e.data containing:
  *   @param {Array<{name:string, line1:string, line2:string, catnr:string, func:string}>} e.data.tles
- *     Catalogue de satellites à tester (TLE brutes + métadonnées déjà calculées côté page principale).
- *   @param {number} e.data.homeLat - Latitude du domicile (degrés).
- *   @param {number} e.data.homeLon - Longitude du domicile (degrés).
- *   @param {number} e.data.windowStartMs - Début de la fenêtre de recherche (timestamp ms).
- *   @param {number} e.data.windowEndMs - Fin de la fenêtre de recherche (timestamp ms).
- *   @param {number} e.data.coarseStepMs - Pas d'échantillonnage du balayage grossier (ms).
- *   @param {number} e.data.candidateThresholdM - Distance (m) sous laquelle un minimum local
- *     du balayage grossier déclenche un raffinement fin.
- *   @param {number} e.data.innerBoxHalfWidthM - Demi-largeur de la boîte interne (m).
- *   @param {number} e.data.outerBoxHalfWidthM - Demi-largeur de la boîte externe (m).
- *   @param {Object<string,string>} e.data.countryMap - Table numéro NORAD -> code pays (SATCAT).
+ *     Satellite catalog to test (raw TLEs + metadata already computed on the main page).
+ *   @param {number} e.data.homeLat - Home location latitude (degrees).
+ *   @param {number} e.data.homeLon - Home location longitude (degrees).
+ *   @param {number} e.data.windowStartMs - Start of search window (timestamp ms).
+ *   @param {number} e.data.windowEndMs - End of search window (timestamp ms).
+ *   @param {number} e.data.coarseStepMs - Coarse sweep sampling step (ms).
+ *   @param {number} e.data.candidateThresholdM - Distance (m) below which a local
+ *     minimum from the coarse sweep triggers fine refinement.
+ *   @param {number} e.data.boxHalfWidthM - Half-width of the detection box (m); 10000 for a 20km square.
+ *   @param {Object<string,string>} e.data.countryMap - NORAD number → country code map (from SATCAT).
  */
 self.onmessage = function (e) {
   const {
@@ -123,8 +122,7 @@ self.onmessage = function (e) {
     windowEndMs,
     coarseStepMs,
     candidateThresholdM,
-    innerBoxHalfWidthM,
-    outerBoxHalfWidthM,
+    boxHalfWidthM,
     countryMap,
   } = e.data;
 
@@ -168,10 +166,7 @@ self.onmessage = function (e) {
         const hiMs = windowStartMs + (i + 1) * coarseStepMs;
         const refined = refineMin(satrec, loMs, hiMs, homeLat, homeLon, 28);
 
-        const inInner = Math.abs(refined.dx) <= innerBoxHalfWidthM && Math.abs(refined.dy) <= innerBoxHalfWidthM;
-        const inOuter = Math.abs(refined.dx) <= outerBoxHalfWidthM && Math.abs(refined.dy) <= outerBoxHalfWidthM;
-
-        if (inInner || inOuter) {
+        if (Math.abs(refined.dx) <= boxHalfWidthM && Math.abs(refined.dy) <= boxHalfWidthM) {
           results.push({
             catnr: sat.catnr,
             name: sat.name,
@@ -185,7 +180,6 @@ self.onmessage = function (e) {
             lat: refined.lat,
             lon: refined.lon,
             country: countryMap[sat.catnr] || null,
-            boxType: inInner ? 'inner' : 'outer',
           });
         }
       }
