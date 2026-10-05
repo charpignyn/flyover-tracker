@@ -38,6 +38,10 @@
     flex: 1; background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
     padding: 7px 10px; border-radius: 5px; font-size: 13px; font-family: var(--sans);
   }
+  header input[type=number] {
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+    font-family: var(--sans);
+  }
   header select, header button {
     background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
     padding: 7px 10px; border-radius: 5px; font-size: 13px; cursor: pointer; font-family: var(--sans);
@@ -86,32 +90,36 @@
       <input type="text" id="addressInput" placeholder="Address (e.g. 350 Fifth Ave, New York)" />
       <button type="submit" class="primary">Locate</button>
     </form>
-    <select id="catalogSelect" title="Catalog scope">
-      <option value="full" selected>Full catalog (+ debris)</option>
-      <option value="active">Active only (faster)</option>
-    </select>
-    <select id="resSelect" title="Search resolution">
-      <option value="45000" selected>Standard resolution</option>
-      <option value="90000">Fast (less precise)</option>
-      <option value="20000">Precise (slower)</option>
-    </select>
-    <button id="recomputeBtn" disabled>Recompute today</button>
+    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+      <label style="font-size: 12px; color: var(--text-dim);">Inner (km): <input type="number" id="innerBoxInput" value="0.5" min="0.1" step="0.1" style="width: 50px; padding: 4px 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 3px; font-size: 12px;" /></label>
+      <label style="font-size: 12px; color: var(--text-dim);">Outer (km): <input type="number" id="outerBoxInput" value="20" min="1" step="1" style="width: 50px; padding: 4px 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 3px; font-size: 12px;" /></label>
+      <select id="catalogSelect" title="Catalog scope" style="font-size: 12px;">
+        <option value="full" selected>Full catalog</option>
+        <option value="active">Active only</option>
+      </select>
+      <select id="resSelect" title="Search resolution" style="font-size: 12px;">
+        <option value="45000" selected>Standard</option>
+        <option value="90000">Fast</option>
+        <option value="20000">Precise</option>
+      </select>
+      <button id="recomputeBtn" disabled style="font-size: 12px;">Recompute</button>
+    </div>
   </header>
   <div id="map"></div>
   <div id="sidebar">
     <div id="status">Enter an address to get started.<div class="bar"><div id="progressBar"></div></div></div>
     <div id="legend">
-      <span><i class="dot" style="background:var(--past)"></i>Already passed</span>
+      <span><span style="display: inline-block; width: 12px; height: 12px; border: 1.5px dashed #3ddc97; border-radius: 1px;"></span>Inner</span>
+      <span><span style="display: inline-block; width: 12px; height: 12px; border: 1.5px dashed #6b7686; border-radius: 1px;"></span>Outer</span>
+      <span><i class="dot" style="background:var(--past)"></i>Past</span>
       <span><i class="dot" style="background:var(--future)"></i>Upcoming</span>
       <span><i class="dot" style="background:var(--iss)"></i>ISS</span>
-      <span><i class="dot" style="background:#fff"></i>Live</span>
     </div>
     <div id="list"><div id="empty">No passes computed yet.</div></div>
   </div>
 </div>
 
 <script>
-const BOX_HALF_WIDTH_M = 250; // carré de 500m de côté
 const CANDIDATE_THRESHOLD_M = 25000; // seuil grossier avant raffinement
 const LIVE_WINDOW_MS = 4 * 60 * 1000; // fenêtre d'animation "en direct" autour de maintenant
 
@@ -139,13 +147,14 @@ function classify(name, group) {
   return 'Unknown function';
 }
 
-let map, rectLayer, homeMarker;
+let map, innerRectLayer, outerRectLayer, homeMarker;
 let liveMarkers = new Map(); // catnr -> L.CircleMarker
 let staticMarkers = new Map();
 let allResults = [];
 let homeLat = null, homeLon = null;
 let tickTimer = null;
 let worker = null;
+let innerBoxKm = 0.5, outerBoxKm = 20;
 
 function initMap() {
   map = L.map('map', { zoomControl: true, attributionControl: true }).setView([44.84, -0.58], 13);
@@ -173,16 +182,27 @@ async function geocode(address) {
 }
 
 function drawHome() {
-  if (rectLayer) map.removeLayer(rectLayer);
+  if (innerRectLayer) map.removeLayer(innerRectLayer);
+  if (outerRectLayer) map.removeLayer(outerRectLayer);
   if (homeMarker) map.removeLayer(homeMarker);
 
-  const latOffset = BOX_HALF_WIDTH_M / 110540;
-  const lonOffset = BOX_HALF_WIDTH_M / (111320 * Math.cos(homeLat * Math.PI / 180));
-  const bounds = [[homeLat - latOffset, homeLon - lonOffset], [homeLat + latOffset, homeLon + lonOffset]];
+  const innerBoxM = innerBoxKm * 1000;
+  const outerBoxM = outerBoxKm * 1000;
 
-  rectLayer = L.rectangle(bounds, { color: '#3ddc97', weight: 2, fillOpacity: 0.05, dashArray: '4 4' }).addTo(map);
+  const drawRect = (boxM, color, dashArray) => {
+    const latOffset = boxM / 110540;
+    const lonOffset = boxM / (111320 * Math.cos(homeLat * Math.PI / 180));
+    const bounds = [[homeLat - latOffset, homeLon - lonOffset], [homeLat + latOffset, homeLon + lonOffset]];
+    return L.rectangle(bounds, { color, weight: 2, fillOpacity: 0.03, dashArray }).addTo(map);
+  };
+
+  innerRectLayer = drawRect(innerBoxM, '#3ddc97', '4 4');
+  outerRectLayer = drawRect(outerBoxM, '#6b7686', '8 4');
   homeMarker = L.circleMarker([homeLat, homeLon], { radius: 4, color: '#fff', fillColor: '#fff', fillOpacity: 1 }).addTo(map);
 
+  const latOffset = outerBoxM / 110540;
+  const lonOffset = outerBoxM / (111320 * Math.cos(homeLat * Math.PI / 180));
+  const bounds = [[homeLat - latOffset, homeLon - lonOffset], [homeLat + latOffset, homeLon + lonOffset]];
   map.fitBounds(bounds, { maxZoom: 18, padding: [80, 80] });
 }
 
@@ -279,7 +299,7 @@ function renderList() {
   const list = document.getElementById('list');
   const now = Date.now();
   if (!allResults.length) {
-    list.innerHTML = '<div id="empty">No passes detected through the square today with these settings. That\'s normal — the zone is small (500m). Try the full catalog, or check back later in the day.</div>';
+    list.innerHTML = '<div id="empty">No passes detected in either box today with these settings. That\'s normal — try the full catalog, or check back later in the day.</div>';
     return;
   }
   list.innerHTML = '';
@@ -294,6 +314,7 @@ function renderList() {
       '</div>' +
       '<div class="meta">' +
         '<span class="badge ' + st + '">' + (st === 'live' ? 'LIVE' : st === 'past' ? 'Past' : 'Upcoming') + '</span>' +
+        '<span class="badge" style="background: ' + (r.boxType === 'inner' ? 'rgba(61,220,151,0.15); color: var(--future)' : 'rgba(107,118,134,0.15); color: var(--past)') + ';">' + (r.boxType === 'inner' ? 'Inner' : 'Outer') + '</span>' +
         '<span>' + countryLabel(r.country) + '</span>' +
         '<span>' + r.func + '</span>' +
         '<span>alt. ' + Math.round(r.alt) + ' km</span>' +
@@ -372,7 +393,8 @@ function runSearch(mode, coarseStepMs) {
       windowEndMs: endOfDay.getTime(),
       coarseStepMs,
       candidateThresholdM: CANDIDATE_THRESHOLD_M,
-      boxHalfWidthM: BOX_HALF_WIDTH_M,
+      innerBoxHalfWidthM: (innerBoxKm * 1000) / 2,
+      outerBoxHalfWidthM: (outerBoxKm * 1000) / 2,
       countryMap,
     });
   });
@@ -424,6 +446,22 @@ document.getElementById('recomputeBtn').addEventListener('click', () => {
   if (homeLat !== null) launch();
 });
 
+function updateBoxSizes() {
+  innerBoxKm = parseFloat(document.getElementById('innerBoxInput').value) || 0.5;
+  outerBoxKm = parseFloat(document.getElementById('outerBoxInput').value) || 20;
+}
+
+['innerBoxInput', 'outerBoxInput'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => {
+    updateBoxSizes();
+    if (homeLat !== null) {
+      drawHome();
+      launch();
+    }
+  });
+});
+
+updateBoxSizes();
 initMap();
 </script>
 </body>
