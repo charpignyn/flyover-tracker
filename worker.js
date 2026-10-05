@@ -122,7 +122,8 @@ self.onmessage = function (e) {
     windowEndMs,
     coarseStepMs,
     candidateThresholdM,
-    boxHalfWidthM,
+    innerBoxHalfWidthM,
+    outerBoxHalfWidthM,
     countryMap,
   } = e.data;
 
@@ -166,7 +167,10 @@ self.onmessage = function (e) {
         const hiMs = windowStartMs + (i + 1) * coarseStepMs;
         const refined = refineMin(satrec, loMs, hiMs, homeLat, homeLon, 28);
 
-        if (Math.abs(refined.dx) <= boxHalfWidthM && Math.abs(refined.dy) <= boxHalfWidthM) {
+        const inInner = Math.abs(refined.dx) <= innerBoxHalfWidthM && Math.abs(refined.dy) <= innerBoxHalfWidthM;
+        const inOuter = Math.abs(refined.dx) <= outerBoxHalfWidthM && Math.abs(refined.dy) <= outerBoxHalfWidthM;
+
+        if (inInner || inOuter) {
           results.push({
             catnr: sat.catnr,
             name: sat.name,
@@ -180,6 +184,7 @@ self.onmessage = function (e) {
             lat: refined.lat,
             lon: refined.lon,
             country: countryMap[sat.catnr] || null,
+            boxType: inInner ? 'inner' : 'outer',
           });
         }
       }
