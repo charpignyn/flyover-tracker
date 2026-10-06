@@ -104,8 +104,7 @@
       <button type="submit" class="primary">Locate</button>
     </form>
     <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-      <label style="font-size: 12px; color: var(--text-dim);">Inner (km): <input type="number" id="innerBoxInput" value="0.5" min="0.1" step="0.1" style="width: 50px; padding: 4px 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 3px; font-size: 12px;" /></label>
-      <label style="font-size: 12px; color: var(--text-dim);">Outer (km): <input type="number" id="outerBoxInput" value="20" min="1" step="1" style="width: 50px; padding: 4px 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 3px; font-size: 12px;" /></label>
+      <label style="font-size: 12px; color: var(--text-dim);">Box size (km): <input type="number" id="boxInput" value="20" min="1" step="1" style="width: 50px; padding: 4px 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 3px; font-size: 12px;" /></label>
       <select id="catalogSelect" title="Catalog scope" style="font-size: 12px;">
         <option value="full" selected>Full catalog</option>
         <option value="active">Active only</option>
@@ -122,8 +121,6 @@
   <div id="sidebar">
     <div id="status">Enter an address to get started.<div class="bar"><div id="progressBar"></div></div></div>
     <div id="legend">
-      <span><span style="display: inline-block; width: 12px; height: 12px; border: 1.5px dashed #3ddc97; border-radius: 1px;"></span>Inner</span>
-      <span><span style="display: inline-block; width: 12px; height: 12px; border: 1.5px dashed #6b7686; border-radius: 1px;"></span>Outer</span>
       <span><i class="dot" style="background:var(--past)"></i>Past</span>
       <span><i class="dot" style="background:var(--future)"></i>Upcoming</span>
       <span><i class="dot" style="background:var(--iss)"></i>ISS</span>
@@ -134,11 +131,7 @@
 
 <!-- ***************************** body/script ***************************** -->
 <script>
-
-// --- Parameters
-
-const CANDIDATE_THRESHOLD_M = 25000; // [m] coarse threshold to select candidate satellite
-const LIVE_WINDOW_MS = 4 * 60 * 1000; // [min] Define temporal window for live animation (now -/+ LIVE_WINDOW_MS)
+const LIVE_WINDOW_MS = 4 * 60 * 1000; // fenêtre d'animation "en direct" autour de maintenant
 
 const COUNTRY_NAMES = {
   US: 'United States', RU: 'Russia', CIS: 'Russia / ex-USSR', PRC: 'China', CN: 'China',
@@ -173,14 +166,13 @@ function classify(name, group) {
   return 'Unknown function';
 }
 
-let map, innerRectLayer, outerRectLayer, homeMarker;
-let liveMarkers = new Map(); // catnr -> L.CircleMarker
+let map, rectLayer, homeMarker;
 let staticMarkers = new Map();
 let allResults = [];
 let homeLat = null, homeLon = null; // (latitude, longitude) of the studied adress
 let tickTimer = null;
 let worker = null;
-let innerBoxKm = 0.5, outerBoxKm = 20; // Small and big tile sizes definition
+let boxKm = 20;
 
 function initMap() {
   // Initialise the map on the web interface using Leaflet
@@ -212,34 +204,35 @@ async function geocode(address) {
 }
 
 function drawHome() {
-  if (innerRectLayer) map.removeLayer(innerRectLayer);
-  if (outerRectLayer) map.removeLayer(outerRectLayer);
+  if (rectLayer) map.removeLayer(rectLayer);
   if (homeMarker) map.removeLayer(homeMarker);
 
-  // conversion from km to m
-  const innerBoxM = innerBoxKm * 1000;
-  const outerBoxM = outerBoxKm * 1000;
+  const boxM = boxKm * 1000;
+  const latOffset = boxM / 110540;
+  const lonOffset = boxM / (111320 * Math.cos(homeLat * Math.PI / 180));
 
-  const drawRect = (boxM, color, dashArray) => {
+  const bounds = [
+    [homeLat - latOffset, homeLon - lonOffset],
+    [homeLat + latOffset, homeLon + lonOffset]
+  ];
 
-    // 1° latitude  ≈ 110.5 km
-    const latOffset = boxM / 110540;
+  rectLayer = L.rectangle(bounds, {
+    color: '#3ddc97',
+    weight: 2,
+    fillOpacity: 0.03
+  }).addTo(map);
 
-    // 1° longitude ≈ 111.3 × cos(latitude) km
-    const lonOffset = boxM / (111320 * Math.cos(homeLat * Math.PI / 180));
+  homeMarker = L.circleMarker([homeLat, homeLon], {
+    radius: 4,
+    color: '#fff',
+    fillColor: '#fff',
+    fillOpacity: 1
+  }).addTo(map);
 
-    const bounds = [[homeLat - latOffset, homeLon - lonOffset], [homeLat + latOffset, homeLon + lonOffset]];
-    return L.rectangle(bounds, { color, weight: 2, fillOpacity: 0.03, dashArray }).addTo(map);
-  };
-
-  innerRectLayer = drawRect(innerBoxM, '#3ddc97', '4 4');
-  outerRectLayer = drawRect(outerBoxM, '#6b7686', '8 4');
-  homeMarker = L.circleMarker([homeLat, homeLon], { radius: 4, color: '#fff', fillColor: '#fff', fillOpacity: 1 }).addTo(map);
-
-  const latOffset = outerBoxM / 110540;
-  const lonOffset = outerBoxM / (111320 * Math.cos(homeLat * Math.PI / 180));
-  const bounds = [[homeLat - latOffset, homeLon - lonOffset], [homeLat + latOffset, homeLon + lonOffset]];
-  map.fitBounds(bounds, { maxZoom: 18, padding: [80, 80] });
+  map.fitBounds(bounds, {
+    maxZoom: 18,
+    padding: [80, 80]
+  });
 }
 
 
@@ -264,7 +257,8 @@ function parseTleBlock(text, group) {
 
 async function fetchGroup(group) {
   // Fetching TLEs
-  const url = 'https://celestrak.org/NORAD/elements/gp.php?GROUP=' + group + '&FORMAT=tle';
+  const url = '/celestrak/NORAD/elements/gp.php?GROUP=' + group + '&FORMAT=tle';
+
   const res = await fetch(url);
   if (!res.ok) throw new Error('Group ' + group + ' unavailable (HTTP ' + res.status + ')');
   const text = await res.text();
@@ -274,7 +268,7 @@ async function fetchGroup(group) {
 // SATCAT legacy (texte à largeur fixe, champs séparés par des espaces multiples) -> pays par numéro NORAD
 async function fetchCountryMap() {
   try {
-    const res = await fetch('https://celestrak.org/pub/satcat.txt');
+    const res = await fetch('/celestrak/pub/satcat.txt');
     if (!res.ok) return {};
     const text = await res.text();
     const map = {};
@@ -363,7 +357,7 @@ function renderList() {
       '</div>' +
       '<div class="meta">' +
         '<span class="badge ' + st + '">' + (st === 'live' ? 'LIVE' : st === 'past' ? 'Past' : 'Upcoming') + '</span>' +
-        '<span class="badge" style="background: ' + (r.boxType === 'inner' ? 'rgba(61,220,151,0.15); color: var(--future)' : 'rgba(107,118,134,0.15); color: var(--past)') + ';">' + (r.boxType === 'inner' ? 'Inner' : 'Outer') + '</span>' +
+		'<span class="badge" style="background: rgba(61,220,151,0.15); color: var(--future);">Box</span>' +
         '<span>' + countryLabel(r.country) + '</span>' +
         '<span>' + r.func + '</span>' +
         '<span>alt. ' + Math.round(r.alt) + ' km</span>' +
@@ -421,6 +415,8 @@ function runSearch(mode, coarseStepMs) {
     let tles;
     try {
       tles = await fetchAllTles(mode);
+      console.log('TLE count:', tles.length);
+      console.log('First TLE:', tles[0]);
     } catch (e) { return reject(e); }
 
     setStatus('Fetching nationalities (SATCAT)…');
@@ -440,19 +436,26 @@ function runSearch(mode, coarseStepMs) {
       if (msg.type === 'progress') {
         setStatus('Computing passes… (' + msg.processed + '/' + msg.total + ')', msg.processed / msg.total);
       } else if (msg.type === 'done') {
+        console.log('WORKER DONE:', msg);
         resolve(msg.results);
       }
     };
     worker.onerror = (err) => reject(err);
+
+	const boxHalfWidthM = (boxKm * 1000) / 2;
+	const candidateThresholdM = boxHalfWidthM * Math.sqrt(2);
+
+    console.log('HOME:', homeLat, homeLon);
+    console.log('Window:', new Date(startOfDay), new Date(endOfDay));
+    console.log('Box:', boxHalfWidthM);
 
     worker.postMessage({
       tles, homeLat, homeLon,
       windowStartMs: startOfDay.getTime(),
       windowEndMs: endOfDay.getTime(),
       coarseStepMs,
-      candidateThresholdM: CANDIDATE_THRESHOLD_M,
-      innerBoxHalfWidthM: (innerBoxKm * 1000) / 2,
-      outerBoxHalfWidthM: (outerBoxKm * 1000) / 2,
+      candidateThresholdM: candidateThresholdM,
+      boxHalfWidthM: (boxKm * 1000) / 2,
       countryMap,
     });
   });
@@ -504,22 +507,19 @@ document.getElementById('recomputeBtn').addEventListener('click', () => {
   if (homeLat !== null) launch();
 });
 
-function updateBoxSizes() {
-  innerBoxKm = parseFloat(document.getElementById('innerBoxInput').value) || 0.5;
-  outerBoxKm = parseFloat(document.getElementById('outerBoxInput').value) || 20;
+function updateBoxSize() {
+  boxKm = parseFloat(document.getElementById('boxInput').value) || 20;
 }
 
-['innerBoxInput', 'outerBoxInput'].forEach(id => {
-  document.getElementById(id).addEventListener('change', () => {
-    updateBoxSizes();
-    if (homeLat !== null) {
-      drawHome();
-      launch();
-    }
-  });
+document.getElementById('boxInput').addEventListener('change', () => {
+  updateBoxSize();
+  if (homeLat !== null) {
+    drawHome();
+    launch();
+  }
 });
 
-updateBoxSizes();
+updateBoxSize();
 initMap();
 </script>
 </body>
