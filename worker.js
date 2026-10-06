@@ -184,7 +184,6 @@ self.onmessage = function (e) {
             lat: refined.lat,
             lon: refined.lon,
             country: countryMap[sat.catnr] || null,
-            boxType: 'box',
           });
         }
       }
