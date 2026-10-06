@@ -131,7 +131,6 @@
 
 <!-- ***************************** body/script ***************************** -->
 <script>
-const CANDIDATE_THRESHOLD_M = 25000; // seuil grossier avant raffinement
 const LIVE_WINDOW_MS = 4 * 60 * 1000; // fenêtre d'animation "en direct" autour de maintenant
 
 const COUNTRY_NAMES = {
@@ -205,22 +204,35 @@ async function geocode(address) {
 }
 
 function drawHome() {
-  if (innerRectLayer) map.removeLayer(innerRectLayer);
-  if (outerRectLayer) map.removeLayer(outerRectLayer);
+  if (rectLayer) map.removeLayer(rectLayer);
   if (homeMarker) map.removeLayer(homeMarker);
 
   const boxM = boxKm * 1000;
   const latOffset = boxM / 110540;
   const lonOffset = boxM / (111320 * Math.cos(homeLat * Math.PI / 180));
-  const bounds = [[homeLat - latOffset, homeLon - lonOffset], [homeLat + latOffset, homeLon + lonOffset]];
 
-  rectLayer = L.rectangle(bounds, { color: '#3ddc97', weight: 2, fillOpacity: 0.03 }).addTo(map);
-  homeMarker = L.circleMarker([homeLat, homeLon], { radius: 4, color: '#fff', fillColor: '#fff', fillOpacity: 1 }).addTo(map);
+  const bounds = [
+    [homeLat - latOffset, homeLon - lonOffset],
+    [homeLat + latOffset, homeLon + lonOffset]
+  ];
 
-  const latOffset = outerBoxM / 110540;
-  const lonOffset = outerBoxM / (111320 * Math.cos(homeLat * Math.PI / 180));
-  const bounds = [[homeLat - latOffset, homeLon - lonOffset], [homeLat + latOffset, homeLon + lonOffset]];
-  map.fitBounds(bounds, { maxZoom: 18, padding: [80, 80] });
+  rectLayer = L.rectangle(bounds, {
+    color: '#3ddc97',
+    weight: 2,
+    fillOpacity: 0.03
+  }).addTo(map);
+
+  homeMarker = L.circleMarker([homeLat, homeLon], {
+    radius: 4,
+    color: '#fff',
+    fillColor: '#fff',
+    fillOpacity: 1
+  }).addTo(map);
+
+  map.fitBounds(bounds, {
+    maxZoom: 18,
+    padding: [80, 80]
+  });
 }
 
 
@@ -344,7 +356,7 @@ function renderList() {
       '</div>' +
       '<div class="meta">' +
         '<span class="badge ' + st + '">' + (st === 'live' ? 'LIVE' : st === 'past' ? 'Past' : 'Upcoming') + '</span>' +
-        '<span class="badge" style="background: ' + (r.boxType === 'inner' ? 'rgba(61,220,151,0.15); color: var(--future)' : 'rgba(107,118,134,0.15); color: var(--past)') + ';">' + (r.boxType === 'inner' ? 'Inner' : 'Outer') + '</span>' +
+		'<span class="badge" style="background: rgba(61,220,151,0.15); color: var(--future);">Box</span>' +
         '<span>' + countryLabel(r.country) + '</span>' +
         '<span>' + r.func + '</span>' +
         '<span>alt. ' + Math.round(r.alt) + ' km</span>' +
@@ -426,12 +438,15 @@ function runSearch(mode, coarseStepMs) {
     };
     worker.onerror = (err) => reject(err);
 
+	const boxHalfWidthM = (boxKm * 1000) / 2;
+	const candidateThresholdM = boxHalfWidthM * Math.sqrt(2);
+
     worker.postMessage({
       tles, homeLat, homeLon,
       windowStartMs: startOfDay.getTime(),
       windowEndMs: endOfDay.getTime(),
       coarseStepMs,
-      candidateThresholdM: CANDIDATE_THRESHOLD_M,
+      candidateThresholdM: candidateThresholdM,
       boxHalfWidthM: (boxKm * 1000) / 2,
       countryMap,
     });

@@ -1,35 +1,35 @@
-# Satellite Passes Above Your Home
+# Satellite Passes Over Your Home
 
-## Running the project
+## Running the Project
 
-Serve the files with a small local server (`fetch` calls to CelesTrak/Nominatim are more reliable this way than opening the file directly with `file://`):
+The files must be served through a small local server (the `fetch` requests to CelesTrak/Nominatim are more reliable this way than when opening the file directly with `file://`):
 
 ```bash
-cd project-folder
-python3 -m http.server 8000
+git clone https://github.com/charpignyn/flyover-tracker.git flyover-tracker 
+cd flyover-tracker
+python -m http.server 8000
 ```
 
-Then open `http://localhost:8000/index.html` in your browser.
+Then open http://localhost:8000/index.html in your browser.
 
-No API key needed (CelesTrak, Nominatim, and the Esri tiles are all free to use).
+No API key is required (CelesTrak, Nominatim, and Esri tiles are freely accessible).
 
-## How it works
+## How It Works
 
-1. **Geocoding**: the address is converted to lat/lon via Nominatim (OpenStreetMap).
-2. **Fetching orbital elements (TLE)**: several CelesTrak groups are combined (`active`, `stations`, `tle-new`, + the main debris clouds) to approximate a "full catalog". CelesTrak doesn't expose a single, anonymous feed of the entire SATCAT (~30,000+ objects, including the very latest) — combining groups this way is a reasonable approximation without a Space-Track account.
-3. **Nationality**: cross-referenced from CelesTrak's plain-text SATCAT (`pub/satcat.txt`) by NORAD number. The field isn't always present for the most recently launched objects.
-4. **Function**: a heuristic classification by name/group (communications, weather, navigation, debris, rocket body...) — CelesTrak doesn't provide a structured "function" field for the whole catalog.
-5. **Pass detection**: in a Web Worker, for every satellite whose inclination allows it to reach your latitude, the distance to the center of the detection box is sampled across the whole day (SGP4 via `satellite.js`), then refined with a ternary search around each local minimum to check whether the pass truly enters the box.
-6. **Rare, and that's expected**: the box size is customizable. Some days there may be only a handful of passes, or none at all in "Active only" mode. "Full catalog" mode finds more (debris included).
+1. **Geocoding**: the address is converted to latitude/longitude coordinates via Nominatim (OpenStreetMap).
+2. **Retrieving orbital elements (TLEs)**: several CelesTrak groups are combined (`active`, `stations`, `tle-new`, plus the main debris clouds) to approximate a "complete catalog". CelesTrak does not provide a single anonymous feed containing the entire SATCAT (~30,000+ objects, including the most recent ones) — this combination of groups is a reasonable approximation without a Space-Track account.
+3. **Nationality**: cross-referenced from CelesTrak's SATCAT text file (`pub/satcat.txt`), using the NORAD number. This field is not always available for the most recent objects.
+4. **Function**: heuristic classification based on the name/group (communications, weather, navigation, debris, rocket body, etc.) — CelesTrak does not provide a structured "function" field for the entire catalog.
+5. **Pass detection**: in a Web Worker, for each satellite whose inclination allows it to reach your latitude, the distance to the center of the square is sampled throughout the day (SGP4 via `satellite.js`), then refined using a ternary search around each local minimum to determine whether the satellite actually enters the 500 m square.
+6. **Rare, and that's normal**: the square is small. On some days there may be only a few passes, or none at all when using "Active Only" mode. The "Complete Catalog" mode finds more passes (including debris).
 
-## Settings available in the interface
+## Available Interface Settings
 
-- **Box size (km)**: customize the detection area radius in kilometers (default 20 km).
-- **Catalog scope**: Active only (faster) vs Full catalog + debris (richer, slower on the first computation).
-- **Search resolution**: controls the coarse sampling step before refinement (Fast/Standard/Precise) — a speed vs. risk-of-missing-a-brief-pass trade-off.
+- **Catalog scope**: Active Only (fast) vs. Complete Catalog + Debris (richer, slower on the first calculation).
+- **Search resolution**: controls the coarse sampling step before refinement (Fast/Standard/Precise) — a trade-off between speed and the risk of missing a very brief pass.
 
-## Known limitations
+## Known Limitations
 
-- No Space-Track authentication: the catalog is an approximation (~15-20k objects) rather than the official ~30k+.
-- The "function" classification is a heuristic, not an authoritative database.
-- The first computation can take a while (tens of seconds) depending on your machine and the chosen mode — a progress bar shows this.
+- No Space-Track authentication: the catalog is an approximation (~15–20k objects) rather than the ~30k+ official objects.
+- The "function" classification is heuristic, not an authoritative database.
+- The first calculation may take a while (several tens of seconds) depending on the machine and selected mode — a progress bar indicates the progress.
