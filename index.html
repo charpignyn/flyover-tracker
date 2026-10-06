@@ -257,7 +257,8 @@ function parseTleBlock(text, group) {
 
 async function fetchGroup(group) {
   // Fetching TLEs
-  const url = 'https://celestrak.org/NORAD/elements/gp.php?GROUP=' + group + '&FORMAT=tle';
+  const url = '/celestrak/NORAD/elements/gp.php?GROUP=' + group + '&FORMAT=tle';
+
   const res = await fetch(url);
   if (!res.ok) throw new Error('Group ' + group + ' unavailable (HTTP ' + res.status + ')');
   const text = await res.text();
@@ -267,7 +268,7 @@ async function fetchGroup(group) {
 // SATCAT legacy (texte à largeur fixe, champs séparés par des espaces multiples) -> pays par numéro NORAD
 async function fetchCountryMap() {
   try {
-    const res = await fetch('https://celestrak.org/pub/satcat.txt');
+    const res = await fetch('/celestrak/pub/satcat.txt');
     if (!res.ok) return {};
     const text = await res.text();
     const map = {};
@@ -414,6 +415,8 @@ function runSearch(mode, coarseStepMs) {
     let tles;
     try {
       tles = await fetchAllTles(mode);
+      console.log('TLE count:', tles.length);
+      console.log('First TLE:', tles[0]);
     } catch (e) { return reject(e); }
 
     setStatus('Fetching nationalities (SATCAT)…');
@@ -433,6 +436,7 @@ function runSearch(mode, coarseStepMs) {
       if (msg.type === 'progress') {
         setStatus('Computing passes… (' + msg.processed + '/' + msg.total + ')', msg.processed / msg.total);
       } else if (msg.type === 'done') {
+        console.log('WORKER DONE:', msg);
         resolve(msg.results);
       }
     };
@@ -440,6 +444,10 @@ function runSearch(mode, coarseStepMs) {
 
 	const boxHalfWidthM = (boxKm * 1000) / 2;
 	const candidateThresholdM = boxHalfWidthM * Math.sqrt(2);
+
+    console.log('HOME:', homeLat, homeLon);
+    console.log('Window:', new Date(startOfDay), new Date(endOfDay));
+    console.log('Box:', boxHalfWidthM);
 
     worker.postMessage({
       tles, homeLat, homeLon,
